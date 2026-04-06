@@ -11,42 +11,53 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Kiểm tra thư mục public
 const publicDir = path.join(__dirname, 'public');
 if (!fs.existsSync(publicDir)) {
   console.error(`❌ Thư mục "${publicDir}" không tồn tại!`);
   process.exit(1);
 }
 
-// Kiểm tra biến môi trường
 if (!process.env.GEMINI_API_KEY) {
   console.error('❌ Thiếu GEMINI_API_KEY');
   process.exit(1);
 }
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const API_KEY = process.env.GEMINI_API_KEY;
 
-// ========== ROUTE API (đặt TRƯỚC static) ==========
+// Hàm lấy danh sách model qua REST API
+async function fetchAvailableModels() {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+  }
+  const data = await response.json();
+  const models = data.models || [];
+  // Lọc model hỗ trợ generateContent và bắt đầu bằng 'models/gemini'
+  const available = models.filter(model => 
+    model.supportedGenerationMethods?.includes('generateContent') &&
+    model.name.startsWith('models/gemini')
+  ).map(model => ({
+    id: model.name.replace('models/', ''),
+    displayName: model.displayName || model.name,
+  }));
+  available.sort((a, b) => a.id.localeCompare(b.id));
+  return available;
+}
+
+// Route lấy danh sách model
 app.get('/api/models', async (req, res) => {
   try {
-    const models = await genAI.listModels();
-    const availableModels = models
-      .filter(model => 
-        model.supportedGenerationMethods?.includes('generateContent') &&
-        model.name.startsWith('models/gemini')
-      )
-      .map(model => ({
-        id: model.name.replace('models/', ''),
-        displayName: model.displayName || model.name,
-      }));
-    availableModels.sort((a, b) => a.id.localeCompare(b.id));
-    res.json({ models: availableModels });
+    const models = await fetchAvailableModels();
+    res.json({ models });
   } catch (error) {
     console.error('Lỗi lấy danh sách model:', error);
     res.status(500).json({ error: 'Không thể lấy danh sách model', details: error.message });
   }
 });
 
+// Route chat
 app.post('/api/chat', async (req, res) => {
   const { message, history, modelName } = req.body;
   if (!message) return res.status(400).json({ error: 'Thiếu tin nhắn' });
@@ -54,7 +65,6 @@ app.post('/api/chat', async (req, res) => {
 
   try {
     const model = genAI.getGenerativeModel({ model: modelName });
-    // Chuẩn hóa lịch sử
     let geminiHistory = [];
     if (history && Array.isArray(history)) {
       const valid = history.filter(msg => (msg.role === 'user' || msg.role === 'model') && msg.content);
@@ -76,10 +86,8 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// ========== PHỤC VỤ FILE TĨNH (đặt SAU API) ==========
+// Phục vụ file tĩnh (phải đặt sau API routes)
 app.use(express.static(publicDir, { fallthrough: false }));
-
-// Xử lý route gốc trả về index.html
 app.get('/', (req, res) => {
   const indexPath = path.join(publicDir, 'index.html');
   if (fs.existsSync(indexPath)) {
@@ -89,12 +97,8 @@ app.get('/', (req, res) => {
   }
 });
 
-// Bắt lỗi 404 cho các route khác
-app.use((req, res) => {
-  res.status(404).json({ error: 'Không tìm thấy đường dẫn' });
-});
-
-// Middleware xử lý lỗi chung
+// Xử lý lỗi 404 và 500
+app.use((req, res) => res.status(404).json({ error: 'Không tìm thấy đường dẫn' }));
 app.use((err, req, res, next) => {
   console.error('Lỗi server:', err);
   res.status(500).json({ error: 'Lỗi nội bộ server', details: err.message });
