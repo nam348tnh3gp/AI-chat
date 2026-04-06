@@ -207,6 +207,7 @@
       background: var(--bg);
     }
 
+    /* CHAT HEADER - KHÔNG WRAP */
     .chat-header {
       display: flex;
       align-items: center;
@@ -215,8 +216,9 @@
       border-bottom: 1px solid var(--border);
       background: var(--bg);
       z-index: 5;
-      gap: 0.75rem;
-      flex-wrap: wrap;
+      gap: 1rem;
+      flex-wrap: nowrap; /* QUAN TRỌNG: không xuống dòng */
+      min-width: 0; /* Cho phép thu nhỏ nếu cần */
     }
 
     .menu-toggle {
@@ -227,43 +229,52 @@
       cursor: pointer;
       padding: 8px;
       border-radius: 50%;
+      flex-shrink: 0;
     }
     .menu-toggle:hover {
       background: var(--hover);
     }
 
-    /* Model selector - luôn hiển thị rõ ràng, không bị che */
+    /* Model selector - co giãn nhưng không xuống dòng */
     .model-selector {
       display: flex;
       align-items: center;
-      gap: 0.75rem;
+      gap: 0.5rem;
       background: var(--surface);
       padding: 0.25rem 0.75rem;
       border-radius: 2rem;
       border: 1px solid var(--border);
+      flex-shrink: 1;
+      min-width: 0;
     }
     .model-selector label {
       font-size: 0.8rem;
       color: var(--text-secondary);
+      flex-shrink: 0;
     }
     .model-selector select {
-      padding: 0.4rem 0.8rem;
+      padding: 0.4rem 0.6rem;
       border-radius: 1.5rem;
       border: 1px solid var(--border);
       background: var(--surface);
       color: var(--text);
       font-size: 0.85rem;
       cursor: pointer;
-      min-width: 160px;
+      max-width: 200px;
+      flex-shrink: 1;
+      min-width: 100px;
     }
     .model-badge {
       font-size: 0.7rem;
       color: var(--text-secondary);
+      flex-shrink: 0;
     }
 
+    /* Header actions - luôn ở bên phải, không wrap */
     .header-actions {
       display: flex;
       gap: 0.5rem;
+      flex-shrink: 0;
       margin-left: auto;
     }
 
@@ -277,6 +288,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      flex-shrink: 0;
     }
     .icon-btn:hover {
       background: var(--hover);
@@ -419,6 +431,7 @@
       justify-content: center;
       cursor: pointer;
       color: white;
+      flex-shrink: 0;
     }
     .send-btn:disabled {
       opacity: 0.5;
@@ -445,6 +458,7 @@
       gap: 0.25rem;
     }
 
+    /* RESPONSIVE - vẫn giữ cùng hàng */
     @media (max-width: 768px) {
       .sidebar {
         position: fixed;
@@ -468,14 +482,30 @@
         display: block;
       }
       .chat-header {
-        padding: 0.5rem 1rem;
-      }
-      .model-selector select {
-        min-width: 120px;
-        font-size: 0.75rem;
+        padding: 0.5rem 0.75rem;
+        gap: 0.5rem;
       }
       .model-selector label {
+        display: none; /* Ẩn label trên mobile để tiết kiệm chỗ */
+      }
+      .model-selector select {
+        min-width: 90px;
+        max-width: 130px;
+        font-size: 0.7rem;
+        padding: 0.3rem 0.4rem;
+      }
+      .model-badge {
         display: none;
+      }
+      .icon-btn {
+        padding: 0.3rem;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .model-selector select {
+        min-width: 80px;
+        max-width: 110px;
       }
     }
   </style>
