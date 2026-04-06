@@ -3,12 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Gemini AI Chat - Miễn phí</title>
+    <title>Gemini AI - Chọn model & Chat</title>
     <style>
         * { box-sizing: border-box; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
         body { margin: 0; background: #f9fafb; }
         .chat-container { max-width: 800px; margin: 0 auto; height: 100vh; display: flex; flex-direction: column; background: white; box-shadow: 0 0 20px rgba(0,0,0,0.05); }
-        .chat-header { background: #1a73e8; color: white; padding: 1rem; text-align: center; font-weight: bold; font-size: 1.2rem; }
+        .chat-header { background: #1a73e8; color: white; padding: 0.8rem 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+        .chat-header h2 { margin: 0; font-size: 1.2rem; }
+        .model-selector { background: white; color: black; padding: 0.3rem 0.6rem; border-radius: 2rem; border: none; font-size: 0.8rem; cursor: pointer; }
         .chat-messages { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
         .message { display: flex; flex-direction: column; max-width: 85%; }
         .user-message { align-self: flex-end; }
@@ -22,12 +24,21 @@
         textarea { flex: 1; border: 1px solid #ccc; border-radius: 1.5rem; padding: 0.75rem 1rem; font-size: 1rem; resize: none; outline: none; font-family: inherit; }
         button { background: #1a73e8; border: none; color: white; font-weight: bold; padding: 0 1.5rem; border-radius: 2rem; cursor: pointer; transition: 0.2s; }
         button:hover { background: #0d5bbd; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .status { font-size: 0.75rem; padding: 0.25rem 0.5rem; background: #f0f0f0; border-radius: 1rem; }
         @media (max-width: 600px) { .message { max-width: 90%; } }
     </style>
 </head>
 <body>
 <div class="chat-container">
-    <div class="chat-header">✨ Gemini AI Chat (Miễn phí)</div>
+    <div class="chat-header">
+        <h2>✨ Gemini AI Chat</h2>
+        <div>
+            <select id="modelSelect" class="model-selector">
+                <option value="">Đang tải danh sách model...</option>
+            </select>
+        </div>
+    </div>
     <div class="chat-messages" id="chatMessages"></div>
     <div class="chat-input-area">
         <textarea id="userInput" rows="1" placeholder="Nhập tin nhắn... (Shift+Enter xuống dòng, Enter gửi)"></textarea>
@@ -39,16 +50,19 @@
     const chatMessages = document.getElementById('chatMessages');
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
-    
-    // Lịch sử chat - chỉ chứa tin nhắn thực tế, KHÔNG chứa tin chào của AI
-    let conversationHistory = [];
+    const modelSelect = document.getElementById('modelSelect');
 
-    // Hiển thị tin chào mừng (chỉ UI, không lưu vào history)
+    // Lịch sử chat (không chứa tin chào AI)
+    let conversationHistory = [];
+    let currentModel = null;
+    let isModelReady = false;
+
+    // Hiển thị tin chào mừng (chỉ UI)
     function addWelcomeMessage() {
         const welcomeDiv = document.createElement('div');
         welcomeDiv.className = 'message assistant-message';
         welcomeDiv.innerHTML = `
-            <div class="bubble assistant-bubble">Xin chào! Tôi là Gemini, trợ lý AI của Google. Bạn cần giúp gì?</div>
+            <div class="bubble assistant-bubble">Xin chào! Tôi là Gemini. Hãy chọn model ở góc phải và bắt đầu chat.</div>
             <div class="timestamp"></div>
         `;
         chatMessages.appendChild(welcomeDiv);
@@ -80,11 +94,63 @@
         return loadingDiv;
     }
 
+    // Lấy danh sách model từ backend
+    async function loadModels() {
+        try {
+            const response = await fetch('/api/models');
+            if (!response.ok) throw new Error('Không thể lấy danh sách model');
+            const data = await response.json();
+            const models = data.models;
+            if (!models || models.length === 0) {
+                modelSelect.innerHTML = '<option value="">Không tìm thấy model nào</option>';
+                return;
+            }
+            // Đổ vào dropdown
+            modelSelect.innerHTML = '';
+            models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = `${model.id} ${model.description ? `- ${model.description.substring(0, 50)}` : ''}`;
+                modelSelect.appendChild(option);
+            });
+            // Chọn model đầu tiên làm mặc định
+            if (models.length > 0) {
+                currentModel = models[0].id;
+                modelSelect.value = currentModel;
+                isModelReady = true;
+            }
+            // Lưu model đã chọn vào localStorage để nhớ lần sau
+            const savedModel = localStorage.getItem('selectedModel');
+            if (savedModel && models.some(m => m.id === savedModel)) {
+                currentModel = savedModel;
+                modelSelect.value = savedModel;
+            }
+        } catch (error) {
+            console.error(error);
+            modelSelect.innerHTML = '<option value="">Lỗi tải model</option>';
+        }
+    }
+
+    // Khi người dùng đổi model
+    modelSelect.addEventListener('change', () => {
+        currentModel = modelSelect.value;
+        if (currentModel) {
+            localStorage.setItem('selectedModel', currentModel);
+            // Tùy chọn: reset conversation history khi đổi model?
+            // Có thể thêm thông báo
+            addMessage(`🔄 Đã chuyển sang model: ${currentModel}`, 'assistant');
+        }
+    });
+
+    // Gửi tin nhắn
     async function sendMessage() {
         const message = userInput.value.trim();
         if (!message) return;
+        if (!currentModel) {
+            addMessage('❌ Vui lòng chọn model trước khi chat.', 'assistant');
+            return;
+        }
 
-        // Thêm tin nhắn user vào UI và lịch sử
         addMessage(message, 'user');
         conversationHistory.push({ role: 'user', content: message });
         userInput.value = '';
@@ -93,17 +159,20 @@
         const loadingDiv = addLoadingMessage();
 
         try {
-            // Gửi lên server: tin nhắn hiện tại + lịch sử trước đó (không bao gồm tin vừa thêm)
             const historyToSend = conversationHistory.slice(0, -1);
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message, history: historyToSend })
+                body: JSON.stringify({
+                    message: message,
+                    history: historyToSend,
+                    modelName: currentModel
+                })
             });
 
             if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP ${response.status}: ${errorText}`);
+                const errorData = await response.json();
+                throw new Error(errorData.error || `HTTP ${response.status}`);
             }
             const data = await response.json();
             if (data.error) throw new Error(data.error);
@@ -114,10 +183,15 @@
         } catch (error) {
             loadingDiv.remove();
             addMessage(`❌ Lỗi: ${error.message}`, 'assistant');
-            // Xóa tin nhắn user vừa thêm khỏi lịch sử vì gửi thất bại
+            // Xóa tin nhắn user vừa thêm nếu lỗi
             conversationHistory.pop();
         }
     }
+
+    // Khởi tạo
+    loadModels().then(() => {
+        sendBtn.disabled = false;
+    });
 
     // Sự kiện
     sendBtn.addEventListener('click', sendMessage);
@@ -127,8 +201,6 @@
             sendMessage();
         }
     });
-
-    // Tự động resize textarea
     userInput.addEventListener('input', function() {
         this.style.height = 'auto';
         this.style.height = Math.min(this.scrollHeight, 120) + 'px';
