@@ -7,7 +7,6 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
   <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
   <style>
-    /* Toàn bộ CSS được nhúng vào đây để tránh lỗi thiếu file style.css */
     * {
       margin: 0;
       padding: 0;
@@ -56,26 +55,86 @@
     .app {
       display: flex;
       height: 100%;
+      position: relative;
     }
 
+    /* Sidebar */
     .sidebar {
       width: 280px;
       background: var(--sidebar-bg);
       border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      transition: transform 0.3s ease;
-      z-index: 10;
+      transition: transform 0.2s ease, width 0.2s ease;
+      z-index: 20;
+      flex-shrink: 0;
+    }
+
+    /* Khi sidebar bị đóng (trên desktop có thể thu gọn) */
+    .sidebar.collapsed {
+      transform: translateX(-100%);
+      position: fixed;
+      height: 100%;
+      top: 0;
+      left: 0;
+    }
+
+    /* Nút mở sidebar (khi đóng) */
+    .sidebar-open-btn {
+      position: fixed;
+      left: 16px;
+      top: 16px;
+      z-index: 15;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 44px;
+      height: 44px;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    .sidebar-open-btn i {
+      font-size: 24px;
+    }
+
+    /* Khi sidebar đóng thì hiện nút mở */
+    .sidebar.collapsed ~ .sidebar-open-btn {
+      display: flex;
     }
 
     .sidebar-header {
       padding: 1.5rem 1rem;
       border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
-
     .sidebar-header h2 {
       font-size: 1.4rem;
-      margin-bottom: 1rem;
+      margin: 0;
+    }
+    .sidebar-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .sidebar-actions button {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .sidebar-actions button:hover {
+      background: var(--hover);
+      color: var(--text);
     }
 
     .new-chat-btn {
@@ -91,6 +150,7 @@
       gap: 0.5rem;
       cursor: pointer;
       font-weight: 500;
+      margin-top: 1rem;
     }
 
     .chat-history-list {
@@ -148,6 +208,12 @@
       display: flex;
       flex-direction: column;
       background: var(--bg);
+      transition: margin-left 0.2s ease;
+    }
+
+    /* Khi sidebar đóng, main dãn full */
+    .sidebar.collapsed ~ .main {
+      margin-left: 0;
     }
 
     .chat-header {
@@ -356,16 +422,25 @@
       gap: 0.25rem;
     }
 
+    /* Responsive: trên mobile, sidebar luôn có thể đóng/mở */
     @media (max-width: 768px) {
       .sidebar {
         position: fixed;
-        left: -280px;
-        height: 100%;
+        left: 0;
         top: 0;
-        transition: left 0.3s;
+        height: 100%;
+        transform: translateX(-100%);
+        transition: transform 0.3s;
       }
       .sidebar.open {
-        left: 0;
+        transform: translateX(0);
+      }
+      .sidebar.collapsed {
+        transform: translateX(-100%);
+        position: fixed;
+      }
+      .sidebar-open-btn {
+        display: flex;
       }
       .menu-toggle {
         display: block;
@@ -378,8 +453,12 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <h2>Gemini Advanced</h2>
-      <button id="newChatBtn" class="new-chat-btn"><i class="material-icons">edit_note</i> New chat</button>
+      <div class="sidebar-actions">
+        <button id="pinSidebarBtn" title="Ghim sidebar"><i class="material-icons">push_pin</i></button>
+        <button id="closeSidebarBtn" title="Đóng sidebar"><i class="material-icons">close</i></button>
+      </div>
     </div>
+    <button id="newChatBtn" class="new-chat-btn"><i class="material-icons">edit_note</i> New chat</button>
     <div class="chat-history-list" id="chatHistoryList"></div>
     <div class="sidebar-footer">
       <button id="importChatBtn"><i class="material-icons">upload_file</i> Import</button>
@@ -387,6 +466,10 @@
       <button id="clearHistoryBtn"><i class="material-icons">delete_sweep</i> Clear all</button>
     </div>
   </aside>
+
+  <!-- Nút mở sidebar khi đang đóng -->
+  <button id="sidebarOpenBtn" class="sidebar-open-btn"><i class="material-icons">menu</i></button>
+
   <main class="main">
     <div class="chat-header">
       <button id="menuToggle" class="menu-toggle"><i class="material-icons">menu</i></button>
@@ -426,7 +509,6 @@
   let currentChatId = null;
   let chats = new Map();
   let isStreaming = false;
-  let currentStreamController = null;
   let modelsList = [];
 
   // DOM elements
@@ -439,12 +521,76 @@
   const themeToggle = document.getElementById('themeToggle');
   const sidebar = document.getElementById('sidebar');
   const menuToggle = document.getElementById('menuToggle');
+  const sidebarOpenBtn = document.getElementById('sidebarOpenBtn');
+  const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+  const pinSidebarBtn = document.getElementById('pinSidebarBtn');
   const chatHistoryList = document.getElementById('chatHistoryList');
   const exportChatBtn = document.getElementById('exportChatBtn');
   const importChatBtn = document.getElementById('importChatBtn');
   const clearHistoryBtn = document.getElementById('clearHistoryBtn');
   const stopStreamBtn = document.getElementById('stopStreamBtn');
   const modelStatus = document.getElementById('modelStatus');
+
+  // ==================== SIDEBAR STATE (pin, collapsed) ====================
+  let isSidebarPinned = true;   // true: luôn mở (ghim), false: có thể đóng
+  let isSidebarCollapsed = false;
+
+  function updateSidebarState() {
+    if (isSidebarPinned) {
+      // Ghim: sidebar luôn hiện, không cho đóng bằng nút X (nhưng vẫn có thể ghim lại)
+      sidebar.classList.remove('collapsed');
+      sidebarOpenBtn.style.display = 'none';
+      // Nếu đang ở mobile, vẫn giữ class open nếu cần
+      if (window.innerWidth <= 768) {
+        sidebar.classList.add('open');
+      }
+    } else {
+      // Không ghim: có thể đóng/mở
+      if (isSidebarCollapsed) {
+        sidebar.classList.add('collapsed');
+        if (window.innerWidth <= 768) sidebar.classList.remove('open');
+        sidebarOpenBtn.style.display = 'flex';
+      } else {
+        sidebar.classList.remove('collapsed');
+        if (window.innerWidth <= 768) sidebar.classList.add('open');
+        sidebarOpenBtn.style.display = 'none';
+      }
+    }
+    // Lưu trạng thái
+    localStorage.setItem('sidebar_pinned', isSidebarPinned);
+    localStorage.setItem('sidebar_collapsed', isSidebarCollapsed);
+  }
+
+  function togglePin() {
+    isSidebarPinned = !isSidebarPinned;
+    if (isSidebarPinned) {
+      isSidebarCollapsed = false; // khi ghim thì mở ra
+    }
+    updateSidebarState();
+  }
+
+  function closeSidebar() {
+    if (!isSidebarPinned) {
+      isSidebarCollapsed = true;
+      updateSidebarState();
+    }
+  }
+
+  function openSidebar() {
+    if (!isSidebarPinned) {
+      isSidebarCollapsed = false;
+      updateSidebarState();
+    }
+  }
+
+  // Load sidebar state from storage
+  function loadSidebarState() {
+    const pinned = localStorage.getItem('sidebar_pinned');
+    if (pinned !== null) isSidebarPinned = pinned === 'true';
+    const collapsed = localStorage.getItem('sidebar_collapsed');
+    if (collapsed !== null) isSidebarCollapsed = collapsed === 'true';
+    updateSidebarState();
+  }
 
   // ==================== STORAGE ====================
   function loadFromStorage() {
@@ -515,7 +661,6 @@
       if (msg.role === 'assistant') {
         const html = marked.parse(msg.content);
         bubble.innerHTML = html;
-        // Highlight code blocks
         bubble.querySelectorAll('pre code').forEach(block => {
           hljs.highlightElement(block);
           const copyBtn = document.createElement('button');
@@ -543,7 +688,7 @@
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 
-  // ==================== SEND MESSAGE WITH STREAMING ====================
+  // ==================== SEND MESSAGE ====================
   async function sendMessage() {
     const message = userInput.value.trim();
     if (!message || isStreaming) return;
@@ -563,9 +708,7 @@
     saveChats();
     renderMessages(chat.messages);
 
-    // Prepare history
     const history = chat.messages.slice(0, -1).map(m => ({ role: m.role, content: m.content }));
-    // Add placeholder
     chat.messages.push({ role: 'assistant', content: '', timestamp: Date.now() });
     renderMessages(chat.messages);
 
@@ -623,7 +766,6 @@
 
   function stopStream() {
     isStreaming = false;
-    // Note: actual abort requires AbortController, but for simplicity we just stop processing
   }
 
   // ==================== CHAT HISTORY UI ====================
@@ -726,7 +868,16 @@
   importChatBtn.addEventListener('click', importChat);
   clearHistoryBtn.addEventListener('click', clearAllHistory);
   stopStreamBtn.addEventListener('click', stopStream);
-  menuToggle.addEventListener('click', () => sidebar.classList.toggle('open'));
+  menuToggle.addEventListener('click', () => {
+    if (window.innerWidth <= 768) {
+      sidebar.classList.toggle('open');
+    } else {
+      if (!isSidebarPinned) openSidebar();
+    }
+  });
+  closeSidebarBtn.addEventListener('click', closeSidebar);
+  pinSidebarBtn.addEventListener('click', togglePin);
+  sidebarOpenBtn.addEventListener('click', openSidebar);
 
   userInput.addEventListener('input', function() {
     this.style.height = 'auto';
@@ -740,6 +891,7 @@
   });
 
   // ==================== INIT ====================
+  loadSidebarState();
   loadFromStorage();
   fetchModels().then(() => {
     if (chats.size === 0) newChat();
