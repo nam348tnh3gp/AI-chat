@@ -2,10 +2,10 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>Gemini AI Chat - Miễn phí</title>
     <style>
-        * { box-sizing: border-box; font-family: system-ui, sans-serif; }
+        * { box-sizing: border-box; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
         body { margin: 0; background: #f9fafb; }
         .chat-container { max-width: 800px; margin: 0 auto; height: 100vh; display: flex; flex-direction: column; background: white; box-shadow: 0 0 20px rgba(0,0,0,0.05); }
         .chat-header { background: #1a73e8; color: white; padding: 1rem; text-align: center; font-weight: bold; font-size: 1.2rem; }
@@ -13,7 +13,7 @@
         .message { display: flex; flex-direction: column; max-width: 85%; }
         .user-message { align-self: flex-end; }
         .assistant-message { align-self: flex-start; }
-        .bubble { padding: 0.75rem 1rem; border-radius: 1.25rem; line-height: 1.4; word-wrap: break-word; }
+        .bubble { padding: 0.75rem 1rem; border-radius: 1.25rem; line-height: 1.4; word-wrap: break-word; white-space: pre-wrap; }
         .user-bubble { background: #1a73e8; color: white; border-bottom-right-radius: 0.25rem; }
         .assistant-bubble { background: #e5e5ea; color: black; border-bottom-left-radius: 0.25rem; }
         .timestamp { font-size: 0.7rem; color: #8e8e93; margin-top: 0.25rem; margin-left: 0.5rem; margin-right: 0.5rem; }
@@ -28,12 +28,7 @@
 <body>
 <div class="chat-container">
     <div class="chat-header">✨ Gemini AI Chat (Miễn phí)</div>
-    <div class="chat-messages" id="chatMessages">
-        <div class="message assistant-message">
-            <div class="bubble assistant-bubble">Xin chào! Tôi là Gemini, trợ lý AI của Google. Bạn cần giúp gì?</div>
-            <div class="timestamp"></div>
-        </div>
-    </div>
+    <div class="chat-messages" id="chatMessages"></div>
     <div class="chat-input-area">
         <textarea id="userInput" rows="1" placeholder="Nhập tin nhắn... (Shift+Enter xuống dòng, Enter gửi)"></textarea>
         <button id="sendBtn">Gửi</button>
@@ -45,16 +40,45 @@
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
     
-    // Lưu lịch sử chat để gửi lên server (giữ context)
-    let conversationHistory = [
-        { role: 'model', content: 'Xin chào! Tôi là Gemini, trợ lý AI của Google. Bạn cần giúp gì?' }
-    ];
+    // Lịch sử chat - chỉ chứa tin nhắn thực tế, KHÔNG chứa tin chào của AI
+    let conversationHistory = [];
 
-    // Tự động resize textarea
-    userInput.addEventListener('input', function() {
-        this.style.height = 'auto';
-        this.style.height = Math.min(this.scrollHeight, 120) + 'px';
-    });
+    // Hiển thị tin chào mừng (chỉ UI, không lưu vào history)
+    function addWelcomeMessage() {
+        const welcomeDiv = document.createElement('div');
+        welcomeDiv.className = 'message assistant-message';
+        welcomeDiv.innerHTML = `
+            <div class="bubble assistant-bubble">Xin chào! Tôi là Gemini, trợ lý AI của Google. Bạn cần giúp gì?</div>
+            <div class="timestamp"></div>
+        `;
+        chatMessages.appendChild(welcomeDiv);
+    }
+    addWelcomeMessage();
+
+    function addMessage(text, sender) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${sender === 'user' ? 'user-message' : 'assistant-message'}`;
+        const bubble = document.createElement('div');
+        bubble.className = `bubble ${sender === 'user' ? 'user-bubble' : 'assistant-bubble'}`;
+        bubble.textContent = text;
+        const timestamp = document.createElement('div');
+        timestamp.className = 'timestamp';
+        timestamp.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' });
+        messageDiv.appendChild(bubble);
+        messageDiv.appendChild(timestamp);
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        return messageDiv;
+    }
+
+    function addLoadingMessage() {
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'message assistant-message';
+        loadingDiv.innerHTML = `<div class="bubble assistant-bubble loading">Gemini đang suy nghĩ...</div>`;
+        chatMessages.appendChild(loadingDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        return loadingDiv;
+    }
 
     async function sendMessage() {
         const message = userInput.value.trim();
@@ -66,24 +90,21 @@
         userInput.value = '';
         userInput.style.height = 'auto';
 
-        // Hiển thị loading
         const loadingDiv = addLoadingMessage();
 
         try {
-            // Gửi lịch sử (không gửi toàn bộ nếu quá dài, có thể giới hạn)
-            // Lấy 10 tin nhắn gần nhất để tránh quá token
-            const recentHistory = conversationHistory.slice(-10);
-            
+            // Gửi lên server: tin nhắn hiện tại + lịch sử trước đó (không bao gồm tin vừa thêm)
+            const historyToSend = conversationHistory.slice(0, -1);
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    message: message,
-                    history: recentHistory.slice(0, -1) // lịch sử trước tin nhắn hiện tại
-                })
+                body: JSON.stringify({ message, history: historyToSend })
             });
 
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
             const data = await response.json();
             if (data.error) throw new Error(data.error);
 
@@ -93,43 +114,12 @@
         } catch (error) {
             loadingDiv.remove();
             addMessage(`❌ Lỗi: ${error.message}`, 'assistant');
-            // Xóa tin nhắn user khỏi lịch sử nếu lỗi (tuỳ chọn)
+            // Xóa tin nhắn user vừa thêm khỏi lịch sử vì gửi thất bại
             conversationHistory.pop();
         }
     }
 
-    function addMessage(text, sender) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${sender === 'user' ? 'user-message' : 'assistant-message'}`;
-        
-        const bubble = document.createElement('div');
-        bubble.className = `bubble ${sender === 'user' ? 'user-bubble' : 'assistant-bubble'}`;
-        // Hiển thị text thuần (có thể parse markdown nếu muốn)
-        bubble.textContent = text;
-        
-        const timestamp = document.createElement('div');
-        timestamp.className = 'timestamp';
-        timestamp.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' });
-        
-        messageDiv.appendChild(bubble);
-        messageDiv.appendChild(timestamp);
-        chatMessages.appendChild(messageDiv);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-        return messageDiv;
-    }
-
-    function addLoadingMessage() {
-        const loadingDiv = document.createElement('div');
-        loadingDiv.className = 'message assistant-message';
-        const bubble = document.createElement('div');
-        bubble.className = 'bubble assistant-bubble loading';
-        bubble.textContent = 'Gemini đang suy nghĩ...';
-        loadingDiv.appendChild(bubble);
-        chatMessages.appendChild(loadingDiv);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-        return loadingDiv;
-    }
-
+    // Sự kiện
     sendBtn.addEventListener('click', sendMessage);
     userInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -138,7 +128,11 @@
         }
     });
 
-    // Optional: Clear history button (có thể thêm sau)
+    // Tự động resize textarea
+    userInput.addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+    });
 </script>
 </body>
 </html>
