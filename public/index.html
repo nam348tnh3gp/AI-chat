@@ -65,12 +65,11 @@
       border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      transition: transform 0.2s ease, width 0.2s ease;
+      transition: transform 0.2s ease;
       z-index: 20;
       flex-shrink: 0;
     }
 
-    /* Khi sidebar bị đóng (trên desktop có thể thu gọn) */
     .sidebar.collapsed {
       transform: translateX(-100%);
       position: fixed;
@@ -79,7 +78,6 @@
       left: 0;
     }
 
-    /* Nút mở sidebar (khi đóng) */
     .sidebar-open-btn {
       position: fixed;
       left: 16px;
@@ -101,7 +99,6 @@
       font-size: 24px;
     }
 
-    /* Khi sidebar đóng thì hiện nút mở */
     .sidebar.collapsed ~ .sidebar-open-btn {
       display: flex;
     }
@@ -208,22 +205,18 @@
       display: flex;
       flex-direction: column;
       background: var(--bg);
-      transition: margin-left 0.2s ease;
-    }
-
-    /* Khi sidebar đóng, main dãn full */
-    .sidebar.collapsed ~ .main {
-      margin-left: 0;
     }
 
     .chat-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 1rem 1.5rem;
+      padding: 0.75rem 1.5rem;
       border-bottom: 1px solid var(--border);
       background: var(--bg);
       z-index: 5;
+      gap: 0.75rem;
+      flex-wrap: wrap;
     }
 
     .menu-toggle {
@@ -232,25 +225,46 @@
       border: none;
       color: var(--text);
       cursor: pointer;
+      padding: 8px;
+      border-radius: 50%;
+    }
+    .menu-toggle:hover {
+      background: var(--hover);
     }
 
+    /* Model selector - luôn hiển thị rõ ràng, không bị che */
     .model-selector {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.75rem;
+      background: var(--surface);
+      padding: 0.25rem 0.75rem;
+      border-radius: 2rem;
+      border: 1px solid var(--border);
     }
-
+    .model-selector label {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+    }
     .model-selector select {
       padding: 0.4rem 0.8rem;
-      border-radius: 2rem;
+      border-radius: 1.5rem;
       border: 1px solid var(--border);
       background: var(--surface);
       color: var(--text);
+      font-size: 0.85rem;
+      cursor: pointer;
+      min-width: 160px;
+    }
+    .model-badge {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
     }
 
     .header-actions {
       display: flex;
       gap: 0.5rem;
+      margin-left: auto;
     }
 
     .icon-btn {
@@ -258,13 +272,12 @@
       border: none;
       color: var(--text);
       cursor: pointer;
-      padding: 0.4rem;
+      padding: 0.5rem;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
     }
-
     .icon-btn:hover {
       background: var(--hover);
     }
@@ -349,6 +362,7 @@
       border-radius: 0.75rem;
       overflow-x: auto;
       margin: 0.5rem 0;
+      position: relative;
     }
     code {
       font-family: monospace;
@@ -361,7 +375,9 @@
       border-radius: 0.5rem;
       font-size: 0.7rem;
       cursor: pointer;
-      float: right;
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
     }
 
     .input-area {
@@ -388,6 +404,9 @@
       outline: none;
       font-family: inherit;
     }
+    textarea:focus {
+      border-color: var(--accent);
+    }
 
     .send-btn {
       background: var(--accent);
@@ -400,6 +419,10 @@
       justify-content: center;
       cursor: pointer;
       color: white;
+    }
+    .send-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
 
     .input-footer {
@@ -422,7 +445,6 @@
       gap: 0.25rem;
     }
 
-    /* Responsive: trên mobile, sidebar luôn có thể đóng/mở */
     @media (max-width: 768px) {
       .sidebar {
         position: fixed;
@@ -444,6 +466,16 @@
       }
       .menu-toggle {
         display: block;
+      }
+      .chat-header {
+        padding: 0.5rem 1rem;
+      }
+      .model-selector select {
+        min-width: 120px;
+        font-size: 0.75rem;
+      }
+      .model-selector label {
+        display: none;
       }
     }
   </style>
@@ -467,13 +499,13 @@
     </div>
   </aside>
 
-  <!-- Nút mở sidebar khi đang đóng -->
   <button id="sidebarOpenBtn" class="sidebar-open-btn"><i class="material-icons">menu</i></button>
 
   <main class="main">
     <div class="chat-header">
       <button id="menuToggle" class="menu-toggle"><i class="material-icons">menu</i></button>
       <div class="model-selector">
+        <label>🤖 Model:</label>
         <select id="modelSelect"></select>
         <span class="model-badge" id="modelBadge"></span>
       </div>
@@ -531,21 +563,16 @@
   const stopStreamBtn = document.getElementById('stopStreamBtn');
   const modelStatus = document.getElementById('modelStatus');
 
-  // ==================== SIDEBAR STATE (pin, collapsed) ====================
-  let isSidebarPinned = true;   // true: luôn mở (ghim), false: có thể đóng
+  // ==================== SIDEBAR STATE ====================
+  let isSidebarPinned = true;
   let isSidebarCollapsed = false;
 
   function updateSidebarState() {
     if (isSidebarPinned) {
-      // Ghim: sidebar luôn hiện, không cho đóng bằng nút X (nhưng vẫn có thể ghim lại)
       sidebar.classList.remove('collapsed');
       sidebarOpenBtn.style.display = 'none';
-      // Nếu đang ở mobile, vẫn giữ class open nếu cần
-      if (window.innerWidth <= 768) {
-        sidebar.classList.add('open');
-      }
+      if (window.innerWidth <= 768) sidebar.classList.add('open');
     } else {
-      // Không ghim: có thể đóng/mở
       if (isSidebarCollapsed) {
         sidebar.classList.add('collapsed');
         if (window.innerWidth <= 768) sidebar.classList.remove('open');
@@ -556,16 +583,13 @@
         sidebarOpenBtn.style.display = 'none';
       }
     }
-    // Lưu trạng thái
     localStorage.setItem('sidebar_pinned', isSidebarPinned);
     localStorage.setItem('sidebar_collapsed', isSidebarCollapsed);
   }
 
   function togglePin() {
     isSidebarPinned = !isSidebarPinned;
-    if (isSidebarPinned) {
-      isSidebarCollapsed = false; // khi ghim thì mở ra
-    }
+    if (isSidebarPinned) isSidebarCollapsed = false;
     updateSidebarState();
   }
 
@@ -583,7 +607,6 @@
     }
   }
 
-  // Load sidebar state from storage
   function loadSidebarState() {
     const pinned = localStorage.getItem('sidebar_pinned');
     if (pinned !== null) isSidebarPinned = pinned === 'true';
@@ -661,17 +684,21 @@
       if (msg.role === 'assistant') {
         const html = marked.parse(msg.content);
         bubble.innerHTML = html;
-        bubble.querySelectorAll('pre code').forEach(block => {
-          hljs.highlightElement(block);
+        bubble.querySelectorAll('pre').forEach(pre => {
           const copyBtn = document.createElement('button');
           copyBtn.className = 'copy-code-btn';
           copyBtn.textContent = 'Copy';
-          copyBtn.onclick = () => {
-            navigator.clipboard.writeText(block.textContent);
-            copyBtn.textContent = 'Copied!';
-            setTimeout(() => copyBtn.textContent = 'Copy', 2000);
-          };
-          block.parentNode.insertBefore(copyBtn, block);
+          const code = pre.querySelector('code');
+          if (code) {
+            copyBtn.onclick = () => {
+              navigator.clipboard.writeText(code.textContent);
+              copyBtn.textContent = 'Copied!';
+              setTimeout(() => copyBtn.textContent = 'Copy', 2000);
+            };
+            pre.style.position = 'relative';
+            pre.appendChild(copyBtn);
+          }
+          hljs.highlightElement(code);
         });
       } else {
         bubble.textContent = msg.content;
