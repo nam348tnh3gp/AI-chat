@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, viewport-fit=cover">
   <title>Gemini Advanced Chat</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
   <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
@@ -12,6 +12,16 @@
       padding: 0;
       box-sizing: border-box;
       font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
     }
 
     :root {
@@ -45,16 +55,10 @@
       --code-bg: #0f172a;
     }
 
-    body {
-      background: var(--bg);
-      color: var(--text);
-      height: 100vh;
-      overflow: hidden;
-    }
-
     .app {
       display: flex;
       height: 100%;
+      width: 100%;
       position: relative;
     }
 
@@ -205,6 +209,8 @@
       display: flex;
       flex-direction: column;
       background: var(--bg);
+      min-height: 0;  /* quan trọng để cho phép flex con scroll */
+      height: 100%;
     }
 
     /* CHAT HEADER - KHÔNG WRAP */
@@ -215,10 +221,10 @@
       padding: 0.75rem 1.5rem;
       border-bottom: 1px solid var(--border);
       background: var(--bg);
-      z-index: 5;
       gap: 1rem;
-      flex-wrap: nowrap; /* QUAN TRỌNG: không xuống dòng */
-      min-width: 0; /* Cho phép thu nhỏ nếu cần */
+      flex-wrap: nowrap;
+      min-width: 0;
+      flex-shrink: 0;
     }
 
     .menu-toggle {
@@ -235,7 +241,6 @@
       background: var(--hover);
     }
 
-    /* Model selector - co giãn nhưng không xuống dòng */
     .model-selector {
       display: flex;
       align-items: center;
@@ -270,7 +275,6 @@
       flex-shrink: 0;
     }
 
-    /* Header actions - luôn ở bên phải, không wrap */
     .header-actions {
       display: flex;
       gap: 0.5rem;
@@ -299,6 +303,7 @@
       overflow-y: auto;
       padding: 1.5rem;
       scroll-behavior: smooth;
+      min-height: 0;
     }
 
     .welcome-screen {
@@ -396,6 +401,7 @@
       padding: 1rem 1.5rem 1.5rem;
       border-top: 1px solid var(--border);
       background: var(--bg);
+      flex-shrink: 0;
     }
 
     .input-container {
@@ -458,7 +464,6 @@
       gap: 0.25rem;
     }
 
-    /* RESPONSIVE - vẫn giữ cùng hàng */
     @media (max-width: 768px) {
       .sidebar {
         position: fixed;
@@ -486,7 +491,7 @@
         gap: 0.5rem;
       }
       .model-selector label {
-        display: none; /* Ẩn label trên mobile để tiết kiệm chỗ */
+        display: none;
       }
       .model-selector select {
         min-width: 90px;
@@ -935,6 +940,13 @@
   closeSidebarBtn.addEventListener('click', closeSidebar);
   pinSidebarBtn.addEventListener('click', togglePin);
   sidebarOpenBtn.addEventListener('click', openSidebar);
+
+  // Khi focus vào textarea, đảm bảo cuộn xuống input (tránh header bị che)
+  userInput.addEventListener('focus', () => {
+    setTimeout(() => {
+      userInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  });
 
   userInput.addEventListener('input', function() {
     this.style.height = 'auto';
