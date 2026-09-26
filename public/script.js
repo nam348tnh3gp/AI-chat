@@ -1,5 +1,5 @@
 /* ============================================================
- *  Gemini Chat – Frontend (v3)
+ *  Gemini Chat – Frontend (v3.1)
  * ============================================================ */
 
 /* ===== Guard: CDN fallback ===== */
@@ -81,6 +81,35 @@ function toast(message, type = 'info', timeout = 3000) {
 }
 
 /* ============================================================
+ *  CLIPBOARD (có fallback cho HTTP / browser cũ)
+ * ============================================================ */
+async function copyToClipboard(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* fall through */ }
+
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/* ============================================================
  *  STORAGE
  * ============================================================ */
 function loadFromStorage() {
@@ -138,30 +167,83 @@ function renderMarkdown(text) {
   });
 }
 
+/* ============================================================
+ *  CODE BLOCKS — highlight + nút copy + nhãn ngôn ngữ
+ * ============================================================ */
+function detectLang(codeEl) {
+  if (!codeEl) return '';
+  const cls = codeEl.className || '';
+  const m = cls.match(/language-([\w+#.-]+)/i);
+  if (m) return m[1].toLowerCase();
+
+  const cand = Array.from(codeEl.classList).find(
+    c => c !== 'hljs' && !c.startsWith('language-') && /^[a-z0-9+#.-]{2,}$/i.test(c)
+  );
+  return cand ? cand.toLowerCase() : '';
+}
+
 function enhanceCodeBlocks(container, { addCopyButtons = true } = {}) {
+  // Link mở tab mới an toàn
   container.querySelectorAll('a').forEach(a => {
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
   });
+
+  // Highlight tất cả <pre><code>
   container.querySelectorAll('pre code').forEach(block => {
     try { hljs.highlightElement(block); } catch { /* ignore */ }
   });
+
   if (!addCopyButtons) return;
+
   container.querySelectorAll('pre').forEach(pre => {
+    if (pre.closest('.code-block-wrap')) return;
     if (pre.querySelector('.copy-code-btn')) return;
+
+    const codeEl = pre.querySelector('code');
+    const lang = detectLang(codeEl);
+
+    // Wrap <pre> để nhãn + nút không bị cuộn theo code
+    const wrap = document.createElement('div');
+    wrap.className = 'code-block-wrap';
+    pre.parentNode.insertBefore(wrap, pre);
+    wrap.appendChild(pre);
+
+    // Nhãn ngôn ngữ
+    if (lang) {
+      const label = document.createElement('span');
+      label.className = 'code-lang-label';
+      label.textContent = lang;
+      wrap.appendChild(label);
+    }
+
+    // Nút copy
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = 'copy-code-btn';
-    btn.innerHTML = '<i class="material-icons">content_copy</i>';
     btn.title = 'Sao chép code';
-    btn.addEventListener('click', () => {
-      const code = pre.querySelector('code');
-      if (!code) return;
-      navigator.clipboard.writeText(code.textContent).then(() => {
-        btn.innerHTML = '<i class="material-icons">check</i>';
-        setTimeout(() => btn.innerHTML = '<i class="material-icons">content_copy</i>', 1500);
-      });
+    btn.setAttribute('aria-label', 'Sao chép code');
+    btn.innerHTML = '<i class="material-icons">content_copy</i><span>Sao chép</span>';
+
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const target = pre.querySelector('code') || pre;
+      const ok = await copyToClipboard(target.textContent);
+
+      if (ok) {
+        btn.classList.add('copied');
+        btn.innerHTML = '<i class="material-icons">check</i><span>Đã chép</span>';
+        setTimeout(() => {
+          btn.classList.remove('copied');
+          btn.innerHTML = '<i class="material-icons">content_copy</i><span>Sao chép</span>';
+        }, 1600);
+      } else {
+        toast('Không sao chép được', 'error', 2000);
+      }
     });
-    pre.appendChild(btn);
+
+    wrap.appendChild(btn);
   });
 }
 
@@ -212,8 +294,9 @@ function createMessageElement(msg) {
   copyBtn.className = 'mini-icon-btn';
   copyBtn.title = 'Sao chép tin nhắn';
   copyBtn.innerHTML = '<i class="material-icons">content_copy</i>';
-  copyBtn.addEventListener('click', () => {
-    navigator.clipboard.writeText(msg.content).then(() => toast('Đã sao chép', 'success', 1500));
+  copyBtn.addEventListener('click', async () => {
+    const ok = await copyToClipboard(msg.content);
+    toast(ok ? 'Đã sao chép' : 'Không sao chép được', ok ? 'success' : 'error', 1500);
   });
   actions.appendChild(copyBtn);
 
@@ -493,6 +576,7 @@ async function sendMessage() {
       if (!fullReply) fullReply = '_(Đã dừng)_';
       assistantMsg.content = fullReply;
       assistantBubble.innerHTML = renderMarkdown(fullReply);
+      enhanceCodeBlocks(assistantBubble);
     } else {
       console.error('[chat] ❌', err);
       const msg = err.message || 'Lỗi không xác định';
