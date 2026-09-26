@@ -263,6 +263,8 @@ app.post('/api/chat', async (req, res) => {
   const contents = buildContents(message, history);
   console.log(`\n[chat] ▶ model=${modelName} history=${contents.length - 1} msg="${message.slice(0, 60)}${message.length > 60 ? '…' : ''}"`);
 
+  // ✅ FIX: Không cần abort tracking cho non-stream
+  //    (client abort sẽ tự throw khi res.json() gọi)
   try {
     const { reply, modelUsed } = await callGeminiWithFallback(modelName, contents);
     console.log(`[chat] ✔ OK model=${modelUsed} len=${reply.length}`);
@@ -302,8 +304,18 @@ app.post('/api/chat/stream', async (req, res) => {
 
   const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
 
+  // ============================================================
+  //  ✅ FIX: Bug `req.on('close')` fire ngay sau khi đọc body
+  //  → Dùng `res.on('close')` + check `writableEnded`
+  // ============================================================
   let aborted = false;
-  req.on('close', () => { aborted = true; });
+  const onResClose = () => {
+    if (!res.writableEnded) {
+      aborted = true;
+      console.log('[chat/stream] ⚠ client thực sự ngắt kết nối');
+    }
+  };
+  res.on('close', onResClose);
 
   try {
     const { reply, modelUsed } = await callGeminiWithFallback(modelName, contents);
@@ -320,12 +332,12 @@ app.post('/api/chat/stream', async (req, res) => {
 
     // Chunk theo từ (giữ khoảng trắng) để có hiệu ứng typing
     const tokens = reply.match(/\S+\s*|\s+/g) || [reply];
-    const CHUNK_MS = 12; // delay giữa các chunk
+    const CHUNK_MS = 12;
 
     for (const token of tokens) {
       if (aborted) break;
       send({ text: token });
-      // Delay nhỏ để có hiệu ứng (nhưng không quá chậm)
+      // Delay nhỏ để có hiệu ứng
       if (token.length > 2 || /[.!?,;:\n]/.test(token)) {
         await new Promise(r => setTimeout(r, CHUNK_MS));
       }
@@ -347,6 +359,8 @@ app.post('/api/chat/stream', async (req, res) => {
     send({ error: msg, raw: err.message });
     res.write('data: [DONE]\n\n');
     res.end();
+  } finally {
+    res.off('close', onResClose);
   }
 });
 
