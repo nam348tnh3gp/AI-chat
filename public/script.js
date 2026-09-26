@@ -1,51 +1,69 @@
 /* ============================================================
- *  Gemini Chat – Frontend
+ *  Gemini Chat – Frontend (v3)
  * ============================================================ */
 
-const STORAGE_CHATS  = 'gemini_chats_v2';
-const STORAGE_THEME  = 'theme';
-const STORAGE_MODEL  = 'last_model';
-const DEFAULT_MODEL  = 'gemini-2.0-flash';
+/* ===== Guard: CDN fallback ===== */
+if (typeof marked === 'undefined') {
+  console.warn('marked.js chưa load — dùng escape cơ bản');
+  window.marked = {
+    setOptions: () => {},
+    parse: (t) => String(t).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])),
+  };
+}
+if (typeof DOMPurify === 'undefined') {
+  console.warn('DOMPurify chưa load — không sanitize (không an toàn)');
+  window.DOMPurify = { sanitize: (h) => h };
+}
+if (typeof hljs === 'undefined') {
+  window.hljs = { highlightElement: () => {} };
+}
+
+/* ===== Constants ===== */
+const STORAGE_CHATS = 'gemini_chats_v3';
+const STORAGE_THEME = 'theme';
+const STORAGE_MODEL = 'last_model';
+const DEFAULT_MODEL = 'gemini-2.0-flash';
+
 const SUGGESTIONS = [
-  { label: 'Giải thích',  text: 'Giải thích khái niệm machine learning cho người mới bắt đầu' },
-  { label: 'Viết code',   text: 'Viết hàm JavaScript kiểm tra số nguyên tố tối ưu' },
-  { label: 'Dịch thuật',  text: 'Dịch đoạn văn sau sang tiếng Anh: "Hôm nay trời đẹp, chúng tôi đi dạo"' },
-  { label: 'Sáng tạo',    text: 'Viết một bài thơ ngắn về mùa thu Hà Nội' },
+  { label: 'Giải thích', text: 'Giải thích khái niệm machine learning cho người mới bắt đầu' },
+  { label: 'Viết code',  text: 'Viết hàm JavaScript kiểm tra số nguyên tố tối ưu' },
+  { label: 'Dịch thuật', text: 'Dịch đoạn văn sau sang tiếng Anh: "Hôm nay trời đẹp, chúng tôi đi dạo"' },
+  { label: 'Sáng tạo',   text: 'Viết một bài thơ ngắn về mùa thu Hà Nội' },
 ];
 
-/* ---------------- DOM ---------------- */
+/* ===== DOM ===== */
 const $ = id => document.getElementById(id);
 const els = {
-  modelSelect:      $('modelSelect'),
-  messagesContainer:$('messagesContainer'),
-  userInput:        $('userInput'),
-  sendBtn:          $('sendBtn'),
-  newChatBtn:       $('newChatBtn'),
-  clearChatBtn:     $('clearChatBtn'),
-  themeToggle:      $('themeToggle'),
-  sidebar:          $('sidebar'),
-  sidebarBackdrop:  $('sidebarBackdrop'),
-  menuToggle:       $('menuToggle'),
-  closeSidebarBtn:  $('closeSidebarBtn'),
-  chatHistoryList:  $('chatHistoryList'),
-  exportChatBtn:    $('exportChatBtn'),
-  importChatBtn:    $('importChatBtn'),
-  clearHistoryBtn:  $('clearHistoryBtn'),
-  stopStreamBtn:    $('stopStreamBtn'),
-  modelStatus:      $('modelStatus'),
-  scrollBottomBtn:  $('scrollBottomBtn'),
-  searchChats:      $('searchChats'),
-  toastContainer:   $('toastContainer'),
+  modelSelect:       $('modelSelect'),
+  messagesContainer: $('messagesContainer'),
+  userInput:         $('userInput'),
+  sendBtn:           $('sendBtn'),
+  newChatBtn:        $('newChatBtn'),
+  clearChatBtn:      $('clearChatBtn'),
+  themeToggle:       $('themeToggle'),
+  sidebar:           $('sidebar'),
+  sidebarBackdrop:   $('sidebarBackdrop'),
+  menuToggle:        $('menuToggle'),
+  closeSidebarBtn:   $('closeSidebarBtn'),
+  chatHistoryList:   $('chatHistoryList'),
+  exportChatBtn:     $('exportChatBtn'),
+  importChatBtn:     $('importChatBtn'),
+  clearHistoryBtn:   $('clearHistoryBtn'),
+  stopStreamBtn:     $('stopStreamBtn'),
+  modelStatus:       $('modelStatus'),
+  scrollBottomBtn:   $('scrollBottomBtn'),
+  searchChats:       $('searchChats'),
+  toastContainer:    $('toastContainer'),
 };
 
-/* ---------------- State ---------------- */
-let currentModel   = DEFAULT_MODEL;
-let currentChatId  = null;
-let chats          = new Map();
-let isStreaming    = false;
-let modelsList     = [];
+/* ===== State ===== */
+let currentModel = DEFAULT_MODEL;
+let currentChatId = null;
+let chats = new Map();
+let isStreaming = false;
+let modelsList = [];
 let abortController = null;
-let autoScroll     = true;
+let autoScroll = true;
 
 /* ============================================================
  *  TOAST
@@ -96,8 +114,8 @@ function saveChats() {
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem(STORAGE_THEME, theme);
-  els.themeToggle.querySelector('i').textContent =
-    theme === 'dark' ? 'light_mode' : 'dark_mode';
+  const icon = els.themeToggle.querySelector('i');
+  if (icon) icon.textContent = theme === 'dark' ? 'light_mode' : 'dark_mode';
 }
 
 function toggleTheme() {
@@ -106,7 +124,7 @@ function toggleTheme() {
 }
 
 /* ============================================================
- *  MARKDOWN RENDERING
+ *  MARKDOWN
  * ============================================================ */
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -179,7 +197,7 @@ function createMessageElement(msg) {
 
   body.appendChild(bubble);
 
-  // Meta / actions
+  // Meta
   const meta = document.createElement('div');
   meta.className = 'message-meta';
   const time = document.createElement('span');
@@ -334,7 +352,6 @@ async function sendMessage() {
   const message = els.userInput.value.trim();
   if (!message || isStreaming) return;
 
-  // Reset input
   els.userInput.value = '';
   autoResize();
 
@@ -349,17 +366,17 @@ async function sendMessage() {
     els.messagesContainer.innerHTML = '';
   }
 
-  // Push user message
+  // User message
   const userMsg = { role: 'user', content: message, timestamp: Date.now() };
   chat.messages.push(userMsg);
   saveChats();
 
-  // Render user message + empty assistant bubble
   if (chat.messages.length === 1) {
     els.messagesContainer.innerHTML = '';
   }
   els.messagesContainer.appendChild(createMessageElement(userMsg));
 
+  // Assistant placeholder
   const assistantMsg = { role: 'assistant', content: '', timestamp: Date.now() };
   chat.messages.push(assistantMsg);
 
@@ -368,35 +385,34 @@ async function sendMessage() {
   els.messagesContainer.appendChild(assistantEl);
   scrollToBottom(true);
 
-  // Update title if still default
-  if (chat.title === message.slice(0, 40)) {
-    // keep user's first message as title — but update sidebar to reflect
-    renderHistoryList();
-  }
+  renderHistoryList();
 
-  // Setup streaming
+  // State
   isStreaming = true;
   abortController = new AbortController();
   els.stopStreamBtn.style.display = 'inline-flex';
   els.sendBtn.disabled = true;
 
-  // History: all messages before current assistant
   const history = chat.messages.slice(0, -1).map(m => ({ role: m.role, content: m.content }));
 
   let fullReply = '';
   let streamError = null;
 
   try {
-    const response = await fetch('/api/chat', {
+    const response = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, history, modelName: currentModel, stream: true }),
+      body: JSON.stringify({ message, history, modelName: currentModel }),
       signal: abortController.signal,
     });
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || `HTTP ${response.status}`);
+    // Không phải SSE (lỗi 4xx/5xx JSON)
+    const ct = (response.headers.get('content-type') || '').toLowerCase();
+    if (!response.ok || !ct.includes('text/event-stream')) {
+      const raw = await response.text();
+      let msg = `HTTP ${response.status}`;
+      try { msg = JSON.parse(raw).error || msg; } catch {}
+      throw new Error(msg);
     }
 
     const reader = response.body.getReader();
@@ -404,7 +420,7 @@ async function sendMessage() {
     let buffer = '';
     let rafPending = false;
 
-    const scheduleBubbleUpdate = () => {
+    const flush = () => {
       if (rafPending) return;
       rafPending = true;
       requestAnimationFrame(() => {
@@ -420,13 +436,13 @@ async function sendMessage() {
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop(); // giữ dòng cuối chưa hoàn chỉnh
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? '';
 
       for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const data = line.slice(6).trim();
-        if (data === '[DONE]') continue;
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === '[DONE]') continue;
 
         try {
           const parsed = JSON.parse(data);
@@ -434,32 +450,33 @@ async function sendMessage() {
             streamError = new Error(parsed.error);
             break;
           }
-          if (parsed.text) {
+          if (parsed.modelUsed && parsed.modelUsed !== currentModel) {
+            toast(`Đã fallback sang model: ${parsed.modelUsed}`, 'warning', 4000);
+          }
+          if (typeof parsed.text === 'string' && parsed.text.length) {
             fullReply += parsed.text;
             assistantMsg.content = fullReply;
-            scheduleBubbleUpdate();
+            flush();
           }
-        } catch { /* bỏ qua chunk lỗi */ }
+        } catch (e) {
+          console.warn('[SSE] Bad JSON:', data);
+        }
       }
       if (streamError) break;
     }
 
     if (streamError) throw streamError;
 
-    // Finalize
-    if (!fullReply) {
-      fullReply = '_(Không có phản hồi)_';
-    }
+    if (!fullReply) fullReply = '_(Không có phản hồi)_';
     assistantMsg.content = fullReply;
     assistantBubble.innerHTML = renderMarkdown(fullReply);
     enhanceCodeBlocks(assistantBubble);
 
-    // Update title from reply nếu title vẫn là tin nhắn đầu
     if (chat.title === message.slice(0, 40) && fullReply) {
       chat.title = fullReply.slice(0, 40).replace(/\n/g, ' ') + (fullReply.length > 40 ? '…' : '');
     }
 
-    // Thêm nút regenerate vào meta
+    // Regenerate button
     const meta = assistantEl.querySelector('.message-actions');
     if (meta && !meta.querySelector('[data-regen]')) {
       const regenBtn = document.createElement('button');
@@ -470,16 +487,31 @@ async function sendMessage() {
       regenBtn.addEventListener('click', regenerateLast);
       meta.appendChild(regenBtn);
     }
+
   } catch (err) {
     if (err.name === 'AbortError') {
       if (!fullReply) fullReply = '_(Đã dừng)_';
       assistantMsg.content = fullReply;
       assistantBubble.innerHTML = renderMarkdown(fullReply);
     } else {
-      console.error(err);
-      assistantMsg.content = `❌ Lỗi: ${err.message}`;
-      assistantBubble.innerHTML = renderMarkdown(assistantMsg.content);
-      toast(`Lỗi: ${err.message}`, 'error', 5000);
+      console.error('[chat] ❌', err);
+      const msg = err.message || 'Lỗi không xác định';
+      let displayMsg;
+      if (/quá tải|503|high demand/i.test(msg)) {
+        displayMsg = `⚠️ **Model đang quá tải tạm thời**\n\nĐợi 10–30 giây rồi thử lại, hoặc đổi model khác.\n\n> ${msg}`;
+        toast('Model quá tải, thử lại sau', 'warning', 5000);
+      } else if (/rate limit|429|hạn mức/i.test(msg)) {
+        displayMsg = `⚠️ **Đã vượt hạn mức**\n\nĐợi 30–60 giây rồi thử lại.\n\n> ${msg}`;
+        toast('Đã vượt hạn mức', 'warning', 5000);
+      } else if (/API key|401/i.test(msg)) {
+        displayMsg = `🔑 **API key không hợp lệ**\n\nKiểm tra lại \`GEMINI_API_KEY\` trong file \`.env\`.\n\n> ${msg}`;
+        toast('API key sai', 'error', 5000);
+      } else {
+        displayMsg = `❌ **${msg}**`;
+        toast(`Lỗi: ${msg}`, 'error', 5000);
+      }
+      assistantMsg.content = displayMsg;
+      assistantBubble.innerHTML = renderMarkdown(displayMsg);
     }
   } finally {
     isStreaming = false;
@@ -493,9 +525,7 @@ async function sendMessage() {
 }
 
 function stopStream() {
-  if (abortController) {
-    abortController.abort();
-  }
+  if (abortController) abortController.abort();
 }
 
 async function regenerateLast() {
@@ -503,18 +533,16 @@ async function regenerateLast() {
   const chat = currentChatId ? chats.get(currentChatId) : null;
   if (!chat || chat.messages.length < 2) return;
 
-  // Xoá assistant message cuối + user message cuối
   const last = chat.messages[chat.messages.length - 1];
   if (last.role === 'assistant') chat.messages.pop();
   const lastUser = chat.messages[chat.messages.length - 1];
   if (!lastUser || lastUser.role !== 'user') return;
 
   const userContent = lastUser.content;
-  chat.messages.pop(); // remove user too, will re-add in sendMessage
+  chat.messages.pop();
   saveChats();
 
   els.userInput.value = userContent;
-  // Remove last two bubbles from DOM
   const messageEls = els.messagesContainer.querySelectorAll('.message');
   if (messageEls.length >= 2) {
     messageEls[messageEls.length - 1].remove();
@@ -524,7 +552,7 @@ async function regenerateLast() {
 }
 
 /* ============================================================
- *  SIDEBAR / HISTORY
+ *  HISTORY LIST
  * ============================================================ */
 function renderHistoryList() {
   els.chatHistoryList.innerHTML = '';
@@ -600,8 +628,10 @@ function renderHistoryList() {
   }
 }
 
+/* ============================================================
+ *  CHAT ACTIONS
+ * ============================================================ */
 function newChat() {
-  // Nếu chat hiện tại đang rỗng, không tạo mới
   const cur = currentChatId ? chats.get(currentChatId) : null;
   if (cur && cur.messages.length === 0) {
     renderMessages([]);
@@ -692,7 +722,7 @@ function clearAllHistory() {
 }
 
 /* ============================================================
- *  SIDEBAR OPEN/CLOSE
+ *  SIDEBAR
  * ============================================================ */
 function openSidebar() {
   els.sidebar.classList.add('open');
@@ -721,7 +751,7 @@ els.userInput.addEventListener('keydown', (e) => {
 });
 
 /* ============================================================
- *  EVENT BINDINGS
+ *  BINDINGS
  * ============================================================ */
 els.sendBtn.addEventListener('click', sendMessage);
 els.stopStreamBtn.addEventListener('click', stopStream);
@@ -737,9 +767,13 @@ els.menuToggle.addEventListener('click', openSidebar);
 els.closeSidebarBtn.addEventListener('click', closeSidebar);
 els.sidebarBackdrop.addEventListener('click', closeSidebar);
 
-// Auto-close sidebar khi resize lên desktop
 window.addEventListener('resize', () => {
   if (window.innerWidth > 768) closeSidebar();
+});
+
+// Global error catcher
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[unhandledRejection]', e.reason);
 });
 
 /* ============================================================
@@ -750,7 +784,6 @@ window.addEventListener('resize', () => {
   await fetchModels();
   renderHistoryList();
 
-  // Restore last chat nếu có
   if (chats.size > 0) {
     const firstId = Array.from(chats.keys())[0];
     currentChatId = firstId;
